@@ -14,6 +14,7 @@ export class HydraDBService {
     }
 
     this.client = new HydraDBClient({
+      token: apiKey.trim(),
       headers: {
         Authorization: `Bearer ${apiKey.trim()}`,
       },
