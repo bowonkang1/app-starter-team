@@ -13,6 +13,14 @@ import {
 const DEFAULT_BASE_URL = 'http://localhost:8000';
 
 /**
+ * Cognee scores CHUNKS results by vector distance, so lower is closer, and it
+ * returns the nearest `topK` chunks however unrelated they are. Results
+ * farther than this are dropped. In local testing a matching memory scored
+ * about 0.4 and unrelated ones 0.8 or more; tune with COGNEE_MAX_DISTANCE.
+ */
+const DEFAULT_MAX_DISTANCE = 0.7;
+
+/**
  * CHUNKS returns the stored text itself, which matches what HydraDB returns.
  * The completion search types would answer with LLM-generated prose and make
  * the two providers' results incomparable.
@@ -45,10 +53,14 @@ export class CogneeConnector implements MemoryConnector {
 
   private readonly apiKey: string | undefined;
 
+  private readonly maxDistance: number;
+
   constructor(configService: ConfigService) {
     const baseUrl = configService.get<string>('COGNEE_BASE_URL') || DEFAULT_BASE_URL;
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.apiKey = configService.get<string>('COGNEE_API_KEY')?.trim() || undefined;
+    const maxDistance = Number(configService.get<string>('COGNEE_MAX_DISTANCE'));
+    this.maxDistance = maxDistance > 0 ? maxDistance : DEFAULT_MAX_DISTANCE;
   }
 
   /**
@@ -96,8 +108,12 @@ export class CogneeConnector implements MemoryConnector {
     this.assertOk(response);
     const body: unknown = await response.json();
 
-    return this.flatten(body).slice(0, limit).map(this.toHit);
+    return this.flatten(body).filter(this.isCloseEnough).slice(0, limit).map(this.toHit);
   }
+
+  /** Items without a numeric score cannot be judged, so they are kept. */
+  private readonly isCloseEnough = (item: CogneeSearchItem): boolean =>
+    typeof item === 'string' || typeof item.score !== 'number' || item.score <= this.maxDistance;
 
   private async request(path: string, init: RequestInit): Promise<Response> {
     const response = await this.send(path, init);
@@ -151,7 +167,9 @@ export class CogneeConnector implements MemoryConnector {
     return {
       id: typeof item.id === 'string' ? item.id : null,
       content: typeof item.text === 'string' ? item.text : JSON.stringify(item),
-      score: typeof item.score === 'number' ? item.score : null,
+      // Flip the distance so that, as with HydraDB, a higher score means a
+      // closer match.
+      score: typeof item.score === 'number' ? Math.max(0, 1 - item.score) : null,
     };
   };
 }

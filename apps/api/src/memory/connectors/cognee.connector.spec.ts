@@ -108,7 +108,7 @@ describe('CogneeConnector', () => {
 
     it('normalizes plain and per-dataset wrapped results into hits', async () => {
       const inputBody = [
-        { id: 'c1', text: 'first', score: 0.8 },
+        { id: 'c1', text: 'first', score: 0.25 },
         { dataset_name: EXPECTED_DATASET, search_result: ['second'] },
       ];
       mockFetch.mockResolvedValue(jsonResponse(inputBody));
@@ -117,9 +117,32 @@ describe('CogneeConnector', () => {
       const actual = await connector.search(SCOPE, 'q', 5);
 
       expect(actual).toEqual([
-        { id: 'c1', content: 'first', score: 0.8 },
+        { id: 'c1', content: 'first', score: 0.75 },
         { id: null, content: 'second', score: null },
       ]);
+    });
+
+    it('drops results farther than the default max distance', async () => {
+      const inputBody = [
+        { id: 'near', text: 'match', score: 0.39 },
+        { id: 'far', text: 'unrelated', score: 0.8 },
+      ];
+      mockFetch.mockResolvedValue(jsonResponse(inputBody));
+      const connector = buildConnector();
+
+      const actual = await connector.search(SCOPE, 'q', 5);
+
+      expect(actual.map((hit) => hit.id)).toEqual(['near']);
+    });
+
+    it('uses COGNEE_MAX_DISTANCE as the cutoff when it is configured', async () => {
+      const inputBody = [{ id: 'far', text: 'unrelated', score: 0.8 }];
+      mockFetch.mockResolvedValue(jsonResponse(inputBody));
+      const connector = buildConnector({ COGNEE_MAX_DISTANCE: '0.9' });
+
+      const actual = await connector.search(SCOPE, 'q', 5);
+
+      expect(actual.map((hit) => hit.id)).toEqual(['far']);
     });
 
     it('caps the hits at the requested limit', async () => {

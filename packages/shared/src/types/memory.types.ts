@@ -33,7 +33,11 @@ export interface SearchMemoriesRequest {
 export interface MemorySearchHit {
   id: string | null;
   content: string;
-  /** Relevance score where the provider supplies one; scales differ by provider. */
+  /**
+   * Relevance score where the provider supplies one. Higher is more relevant
+   * for every provider, but the scales still differ, so compare scores only
+   * within one provider's results.
+   */
   score: number | null;
 }
 
