@@ -1,8 +1,17 @@
+const path = require('path');
+
+// Pin the workspace root to the monorepo. Without this, Next.js infers it from
+// the nearest lockfile it finds, which can be a stray one far above the repo
+// (e.g. in the home directory); Turbopack then watches that whole tree and
+// the dev server runs out of memory.
+const workspaceRoot = path.join(__dirname, '../..');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
   transpilePackages: ['@app-starter/shared'],
+  outputFileTracingRoot: workspaceRoot,
   // Next.js automatically loads .env files, no need to manually configure here
   
   // Image configuration
@@ -34,7 +43,9 @@ const nextConfig = {
   // Turbopack configuration (Next.js 16+ uses Turbopack by default)
   // Turbopack handles hot reloading and file watching automatically,
   // so no custom configuration is needed for the previous webpack watchOptions
-  turbopack: {},
+  turbopack: {
+    root: workspaceRoot,
+  },
   
   // Ensure proper static file serving
   onDemandEntries: {

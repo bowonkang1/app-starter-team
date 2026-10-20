@@ -19,6 +19,7 @@ import { AdminImpersonationModule } from './admin-impersonation/admin-impersonat
 import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
 import { ProjectsModule } from './projects/projects.module';
 import { HydraDBModule } from './hydradb/hydradb.module';
+import { MemoryModule } from './memory/memory.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { HydraDBModule } from './hydradb/hydradb.module';
     AdminImpersonationModule,
     AdminDashboardModule,
     ProjectsModule,
+    MemoryModule,
   ],
   controllers: [AppController],
   providers: [

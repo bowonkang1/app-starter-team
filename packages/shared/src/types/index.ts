@@ -9,3 +9,6 @@ export * from './auth.types';
 
 // Organization types
 export * from './organization.types';
+
+// Memory connector types (HydraDB / Cognee)
+export * from './memory.types';
