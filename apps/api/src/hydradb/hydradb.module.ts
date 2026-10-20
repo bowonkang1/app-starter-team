@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { HydraDBService } from './hydradb.service';
-import { HydraDBController } from './hydradb.controller';
 
+/**
+ * Provides the configured HydraDB client. It exposes no routes: memories are
+ * reached only through the organization-scoped `MemoryModule`.
+ */
 @Module({
   imports: [ConfigModule],
-  controllers: [HydraDBController],
   providers: [HydraDBService],
   exports: [HydraDBService],
 })

@@ -18,3 +18,13 @@ export class MemoryProviderUnavailableException extends BadGatewayException {
     super(`Memory provider "${provider}" is unavailable${detail}`);
   }
 }
+
+/**
+ * The provider answered, but is configured in a way that cannot keep
+ * organizations apart, so its results are withheld.
+ */
+export class MemoryProviderMisconfiguredException extends BadGatewayException {
+  constructor(provider: MemoryProvider, reason: string) {
+    super(`Memory provider "${provider}" is misconfigured: ${reason}`);
+  }
+}

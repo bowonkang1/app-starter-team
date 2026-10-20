@@ -1,5 +1,8 @@
 import { ConfigService } from '@nestjs/config';
-import { MemoryProviderUnavailableException } from '../exceptions/memory.exceptions';
+import {
+  MemoryProviderMisconfiguredException,
+  MemoryProviderUnavailableException,
+} from '../exceptions/memory.exceptions';
 import { CogneeConnector } from './cognee.connector';
 
 describe('CogneeConnector', () => {
@@ -13,6 +16,12 @@ describe('CogneeConnector', () => {
 
   const jsonResponse = (body: unknown, status = 200): Response =>
     new Response(JSON.stringify(body), { status });
+
+  /** The per-dataset wrapper Cognee returns with access control enabled. */
+  const datasetGroup = (searchResult: unknown[]) => ({
+    dataset_name: EXPECTED_DATASET,
+    search_result: searchResult,
+  });
 
   beforeEach(() => {
     mockFetch = jest.fn().mockResolvedValue(jsonResponse({}));
@@ -106,11 +115,8 @@ describe('CogneeConnector', () => {
       expect(actual).toEqual([]);
     });
 
-    it('normalizes plain and per-dataset wrapped results into hits', async () => {
-      const inputBody = [
-        { id: 'c1', text: 'first', score: 0.25 },
-        { dataset_name: EXPECTED_DATASET, search_result: ['second'] },
-      ];
+    it('normalizes the organization dataset results into hits', async () => {
+      const inputBody = [datasetGroup([{ id: 'c1', text: 'first', score: 0.25 }, 'second'])];
       mockFetch.mockResolvedValue(jsonResponse(inputBody));
       const connector = buildConnector();
 
@@ -122,10 +128,35 @@ describe('CogneeConnector', () => {
       ]);
     });
 
+    it('ignores results grouped under another dataset', async () => {
+      const inputBody = [
+        datasetGroup(['own']),
+        { dataset_name: 'org_other', search_result: ['foreign'] },
+      ];
+      mockFetch.mockResolvedValue(jsonResponse(inputBody));
+      const connector = buildConnector();
+
+      const actual = await connector.search(SCOPE, 'q', 5);
+
+      expect(actual.map((hit) => hit.content)).toEqual(['own']);
+    });
+
+    it('throws MemoryProviderMisconfiguredException when Cognee returns ungrouped results', async () => {
+      const inputBody = [{ id: 'c1', text: 'from any dataset', score: 0.1 }];
+      mockFetch.mockResolvedValue(jsonResponse(inputBody));
+      const connector = buildConnector();
+
+      await expect(connector.search(SCOPE, 'q', 5)).rejects.toBeInstanceOf(
+        MemoryProviderMisconfiguredException,
+      );
+    });
+
     it('drops results farther than the default max distance', async () => {
       const inputBody = [
-        { id: 'near', text: 'match', score: 0.39 },
-        { id: 'far', text: 'unrelated', score: 0.8 },
+        datasetGroup([
+          { id: 'near', text: 'match', score: 0.39 },
+          { id: 'far', text: 'unrelated', score: 0.8 },
+        ]),
       ];
       mockFetch.mockResolvedValue(jsonResponse(inputBody));
       const connector = buildConnector();
@@ -136,7 +167,7 @@ describe('CogneeConnector', () => {
     });
 
     it('uses COGNEE_MAX_DISTANCE as the cutoff when it is configured', async () => {
-      const inputBody = [{ id: 'far', text: 'unrelated', score: 0.8 }];
+      const inputBody = [datasetGroup([{ id: 'far', text: 'unrelated', score: 0.8 }])];
       mockFetch.mockResolvedValue(jsonResponse(inputBody));
       const connector = buildConnector({ COGNEE_MAX_DISTANCE: '0.9' });
 
@@ -146,7 +177,7 @@ describe('CogneeConnector', () => {
     });
 
     it('caps the hits at the requested limit', async () => {
-      mockFetch.mockResolvedValue(jsonResponse(['a', 'b', 'c']));
+      mockFetch.mockResolvedValue(jsonResponse([datasetGroup(['a', 'b', 'c'])]));
       const connector = buildConnector();
 
       const actual = await connector.search(SCOPE, 'q', 2);

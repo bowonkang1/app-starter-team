@@ -2,7 +2,10 @@ import { createHash } from 'crypto';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MemorySearchHit } from '@app-starter/shared';
-import { MemoryProviderUnavailableException } from '../exceptions/memory.exceptions';
+import {
+  MemoryProviderMisconfiguredException,
+  MemoryProviderUnavailableException,
+} from '../exceptions/memory.exceptions';
 import {
   AddMemoryResult,
   MemoryConnector,
@@ -28,6 +31,14 @@ const DEFAULT_MAX_DISTANCE = 0.7;
 const SEARCH_TYPE = 'CHUNKS';
 
 type CogneeSearchItem = string | Record<string, unknown>;
+
+interface CogneeDatasetGroup {
+  readonly dataset_name: unknown;
+  readonly search_result: unknown;
+}
+
+const isDatasetGroup = (item: unknown): item is CogneeDatasetGroup =>
+  typeof item === 'object' && item !== null && 'dataset_name' in item && 'search_result' in item;
 
 /**
  * Cognee identifies a document within a dataset by its file name and answers
@@ -108,7 +119,10 @@ export class CogneeConnector implements MemoryConnector {
     this.assertOk(response);
     const body: unknown = await response.json();
 
-    return this.flatten(body).filter(this.isCloseEnough).slice(0, limit).map(this.toHit);
+    return this.flatten(body, toPartitionName(scope))
+      .filter(this.isCloseEnough)
+      .slice(0, limit)
+      .map(this.toHit);
   }
 
   /** Items without a numeric score cannot be judged, so they are kept. */
@@ -141,22 +155,32 @@ export class CogneeConnector implements MemoryConnector {
   }
 
   /**
-   * With access control enabled, Cognee wraps results per dataset as
-   * `{ dataset_name, search_result: [...] }`; without it, it returns the
-   * results directly. Accept both.
+   * Unwrap the per-dataset groups Cognee returns with access control enabled
+   * (`{ dataset_name, search_result: [...] }`), keeping only the requested
+   * dataset's group.
+   *
+   * Without access control Cognee returns bare results, and in that mode it
+   * searches every dataset regardless of the filter, so another
+   * organization's memories may be among them. Refuse such a response
+   * rather than risk returning them.
    */
-  private flatten(body: unknown): CogneeSearchItem[] {
+  private flatten(body: unknown, datasetName: string): CogneeSearchItem[] {
     if (!Array.isArray(body)) {
       return [];
     }
 
-    return body.flatMap((item: CogneeSearchItem) => {
-      if (typeof item === 'object' && item !== null && 'search_result' in item) {
-        const nested = item.search_result;
-        return Array.isArray(nested) ? (nested as CogneeSearchItem[]) : [];
-      }
-      return [item];
-    });
+    if (!body.every(isDatasetGroup)) {
+      throw new MemoryProviderMisconfiguredException(
+        this.provider,
+        'Cognee must run with ENABLE_BACKEND_ACCESS_CONTROL=True to keep organizations apart',
+      );
+    }
+
+    return body
+      .filter((group) => group.dataset_name === datasetName)
+      .flatMap((group) =>
+        Array.isArray(group.search_result) ? (group.search_result as CogneeSearchItem[]) : [],
+      );
   }
 
   private readonly toHit = (item: CogneeSearchItem): MemorySearchHit => {
